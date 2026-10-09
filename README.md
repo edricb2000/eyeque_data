@@ -1,12 +1,16 @@
-# Eyeque Data
+# Signal Filter
 
-**The Foundation.** Secure, obfuscated logic layer and encrypted model handling system.
+Signal Filter is a lightweight, open-source tool for extracting meaningful signals from text. It identifies key action items, decisions, and risks — helping you cut through noise.
 
-## Tech Stack
-- Language: Python (Nuitka compiled)
-- Security: PyArmor Obfuscation & AES-256 Encryption
-- Models: GGUF (.gguf files via Git LFS)
+## Usage
 
-## Goals
-1. Secure core logic against reverse engineering.
-2. Protect model weights in transit and at rest (RAM only).
+```python
+from signal_filter.analyzer import SignalAnalyzerPro
+
+analyzer = SignalAnalyzerPro()
+result = analyzer.analyze(
+    "We decided to reject the delay. The team agreed upon the approved deadline."
+)
+
+for item in result.items:
+    print(f"[{item.score}] {item.content}")
