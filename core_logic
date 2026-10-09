@@ -1,0 +1,140 @@
+const STOP_WORDS = new Set([
+    "the","a","an","and","or","but","in","on","at","to","for",
+    "of","with","by","is","are","was","were","be","been","being",
+    "have","has","had","do","does","did","will","would","could",
+    "should","may","might","can","this","that","these","those",
+    "i","you","he","she","it","we","they"
+]);
+
+const SIGNAL_KEYWORDS = {
+    'action': ['must','need to','should','will implement','deadline','owner'],
+    'decision': ['decided','approved','rejected','finalized','agreed upon'],
+    'risk': ['risk','issue','problem','delay','concern']
+};
+
+class SignalAnalyzerPro {
+    constructor(threshold = 0.65) {
+        this.threshold = threshold;
+        this.sessionHistory = JSON.parse(localStorage.getItem('signalcore_sessions') || '[]');
+    }
+
+    preprocess(text) {
+        if (!text || typeof text !== 'string') return { cleanText: '', tokens: [] };
+        const cleanText = text.toLowerCase().replace(/[^\w\s]/g, ' ');
+        const tokens = cleanText.split(/\s+/).filter(w => w.length > 2);
+        return { cleanText, tokens };
+    }
+
+    calculateEntropyScore(tokens) {
+        if (!tokens || tokens.length === 0) return { score: 0.0, boosts: {} };
+        const meaningful = tokens.filter(t => !STOP_WORDS.has(t));
+        if (meaningful.length < 2) return { score: 0.1, boosts: {} };
+
+        const uniqueCount = new Set(meaningful).size;
+        const rawRatio = uniqueCount / meaningful.length;
+        let boostFactor = 1.0;
+        const keywordBoosts = {};
+
+        const textLower = tokens.join(' ');
+        for (const [category, words] of Object.entries(SIGNAL_KEYWORDS)) {
+            words.forEach(word => {
+                const regex = new RegExp(`\b${word}\b`, 'i');
+                if (regex.test(textLower)) {
+                    boostFactor += 0.15;
+                    keywordBoosts[word] = (keywordBoosts[word] || 0) + 1;
+                }
+            });
+        }
+
+        return {
+            score: Math.min(rawRatio * boostFactor, 1.0),
+            boosts: keywordBoosts
+        };
+    }
+
+    analyze(rawText) {
+        if (!rawText || typeof rawText !== 'string') {
+            return { total_sentences_analyzed: 0, signals_extracted: 0, items: [], keywordImpact: [] };
+        }
+
+        const sentences = rawText.split(/(?<=[.!?])\s+(?=[A-Z])|$/).filter(s => s.trim().length > 0);
+        const highSignalItems = [];
+
+        sentences.forEach(sent => {
+            const { tokens } = this.preprocess(sent);
+            const { score, boosts } = this.calculateEntropyScore(tokens);
+
+            if (score >= this.threshold) {
+                highSignalItems.push({
+                    content: sent.trim(),
+                    score: parseFloat(score.toFixed(3)),
+                    length: tokens.length,
+                    boosts: boosts
+                });
+            }
+        });
+
+        highSignalItems.sort((a, b) => b.score - a.score);
+        const keywordImpact = this.aggregateKeywordImpacts(highSignalItems);
+
+        return {
+            total_sentences_analyzed: sentences.length,
+            signals_extracted: highSignalItems.length,
+            items: highSignalItems,
+            keywordImpact: keywordImpact
+        };
+    }
+
+    aggregateKeywordImpacts(items) {
+        const impact = {};
+        items.forEach(item => {
+            for (const [keyword, count] of Object.entries(item.boosts)) {
+                impact[keyword] = (impact[keyword] || 0) + count;
+            }
+        });
+        return Object.entries(impact).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    }
+
+    saveSession(text, result) {
+        const session = {
+            id: Date.now(),
+            timestamp: new Date().toISOString(),
+            textLength: text.length,
+            signalCount: result.signals_extracted,
+            result: result
+        };
+        this.sessionHistory.push(session);
+        if (this.sessionHistory.length > 10) this.sessionHistory.shift();
+        localStorage.setItem('signalcore_sessions', JSON.stringify(this.sessionHistory));
+        return session;
+    }
+
+    exportJson(result) {
+        const dataStr = JSON.stringify(result, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `signalcore_${Date.now()}.json`;
+        a.click();
+    }
+
+    exportCsv(result) {
+        const headers = ['Content', 'Score', 'Length', 'Boosts'];
+        const rows = result.items.map(item => [
+            `"${item.content.replace(/"/g, '""')}"`,
+            item.score,
+            item.length,
+            `"${JSON.stringify(item.boosts).replace(/"/g, '""')}"`
+        ]);
+        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `signalcore_${Date.now()}.csv`;
+        a.click();
+    }
+}
+
+window.SignalAnalyzerPro = SignalAnalyzerPro;
